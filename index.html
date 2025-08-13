@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>請飲料</title>
+  <style>
+    :root {
+      /* 手機上手指比較粗，安全距離稍微加大；JS 也會再依裝置微調 */
+      --safe-distance: 48px;
+      --runaway-speed: 22px;
+    }
+
+    /* 置中 + 手機寬度友善 */
+    body {
+      margin: 0;
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      background: #faf7f5;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", Arial, sans-serif;
+    }
+
+    .option-group {
+      border: 1px solid #ccc;
+      border-radius: 12px;
+      padding: 20px 18px;
+      width: min(92vw, 420px);
+      background: #fff;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .06);
+      overflow: hidden;
+      /* 讓逃跑別超出容器太多 */
+    }
+
+    .title {
+      font-weight: 700;
+      font-size: clamp(18px, 4vw, 22px);
+      margin-bottom: 14px;
+      line-height: 1.3;
+    }
+
+    .option {
+      display: flex;
+      align-items: center;
+      position: relative;
+      min-height: 40px;
+      /* 手機觸控友善 */
+      margin: 10px 0;
+    }
+
+    .option input[type="radio"] {
+      width: 24px;
+      height: 24px;
+      position: absolute;
+      left: 0;
+      transition: transform .25s ease;
+      /* 逃跑時比較順 */
+      touch-action: none;
+      /* 讓 pointermove 更穩定 */
+    }
+
+    .option span {
+      margin-left: 36px;
+      /* 騰出單選鈕空間 */
+      font-size: 16px;
+    }
+
+    /* 小螢幕再放大一點點點擊目標 */
+    @media (max-width: 480px) {
+      .option {
+        min-height: 46px;
+      }
+
+      .option input[type="radio"] {
+        width: 26px;
+        height: 26px;
+      }
+
+      .option span {
+        font-size: 17px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="option-group" id="box">
+    <div class="title">豪豪請喝星巴克好嗎？</div>
+
+    <!-- 正常可點 -->
+    <label class="option">
+      <input type="radio" name="drink" value="yes">
+      <span>好，要喝什麼來點</span>
+    </label>
+
+    <!-- 下面這些會逃跑 -->
+    <label class="option runaway">
+      <input type="radio" name="drink" value="no">
+      <span>才不要</span>
+    </label>
+
+    <label class="option runaway">
+      <input type="radio" name="drink" value="onTheHouse">
+      <span>你出錢我就請課</span>
+    </label>
+
+    <label class="option runaway">
+      <input type="radio" name="drink" value="later">
+      <span>晚一點再說</span>
+    </label>
+
+    <label class="option runaway">
+      <input type="radio" name="drink" value="dependsOnBrand">
+      <span>太貴了選便宜一點</span>
+    </label>
+  </div>
+
+  <script>
+    // …前略（你的既有程式）
+
+    const box = document.getElementById('box');
+    const runners = Array.from(document.querySelectorAll('.runaway input[type="radio"]'));
+
+    /* ✅ 新增：阻止 runaway 被點選（滑鼠、觸控皆擋） */
+    const runawayLabels = Array.from(document.querySelectorAll('.runaway'));
+    runawayLabels.forEach(lbl => {
+      lbl.addEventListener('click', e => {        // 點擊文字或整個 label
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      lbl.addEventListener('pointerdown', e => {  // 手指/滑鼠按下就擋
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+
+    /* ✅ 新增：鍵盤也不要選到 runaway（避免用 Tab/Space 切換） */
+    runners.forEach(r => {
+      r.setAttribute('tabindex', '-1');          // 不可用 Tab 聚焦
+      r.setAttribute('aria-disabled', 'true');   // 無障礙提示
+      r.addEventListener('keydown', e => e.preventDefault()); // 保險：擋下鍵盤事件
+    });
+
+    // 使用 Pointer Events：同時支援 mouse / touch / pen
+    box.addEventListener('pointermove', handlePointer, { passive: true });
+    // box.addEventListener('pointerdown', handlePointer, { passive: true });
+
+    function handlePointer(e) {
+      const { clientX, clientY } = e;
+
+      runners.forEach(input => {
+        const rect = input.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+
+        const dx = clientX - cx;
+        const dy = clientY - cy;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < (window.matchMedia('(pointer: coarse)').matches ? 56 : 40)) {
+          const angle = Math.atan2(dy, dx);
+          const RUNAWAY_SPEED = window.matchMedia('(pointer: coarse)').matches ? 24 : 20;
+          let offsetX = -Math.cos(angle) * RUNAWAY_SPEED;
+          let offsetY = -Math.sin(angle) * RUNAWAY_SPEED;
+
+          const style = getComputedStyle(input);
+          const matrix = new DOMMatrixReadOnly(style.transform);
+          let currentX = matrix.m41;
+          let currentY = matrix.m42;
+
+          let nextX = currentX + offsetX;
+          let nextY = currentY + offsetY;
+
+          const group = box.getBoundingClientRect();
+          const padding = 8;
+          if (rect.left + offsetX < group.left + padding) nextX = currentX + (group.left + padding - rect.left);
+          if (rect.right + offsetX > group.right - padding) nextX = currentX + (group.right - padding - rect.right);
+          if (rect.top + offsetY < group.top + padding) nextY = currentY + (group.top + padding - rect.top);
+          if (rect.bottom + offsetY > group.bottom - padding) nextY = currentY + (group.bottom - padding - rect.bottom);
+
+          input.style.transform = `translate(${nextX}px, ${nextY}px)`;
+        }
+      });
+    }
+  </script>
+  
+</body>
+
+
+</html>
