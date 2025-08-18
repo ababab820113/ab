@@ -82,6 +82,104 @@
       }
     }
   </style>
+
+
+
+<script>
+    // 取得包住所有選項的容器（父層）
+    const box = document.getElementById('box');
+
+    // 找到所有 class="runaway" 裡的單選按鈕 input
+    const runners = Array.from(document.querySelectorAll('.runaway input[type="radio"]'));
+
+    /* === 阻止 runaway 選項被點選（無法選中） === */
+
+    // 取得所有 runaway 的 <label>
+    const runawayLabels = Array.from(document.querySelectorAll('.runaway'));
+
+    // 針對每個 runaway 的 label 加事件
+    runawayLabels.forEach(lbl => {
+      // 點擊時（不管點文字或框框）阻止事件
+      lbl.addEventListener('click', e => {
+        e.preventDefault();    // 阻止預設動作（避免選中）
+        e.stopPropagation();   // 阻止事件傳播
+      });
+      // 滑鼠或手指按下去時就先擋住
+      lbl.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+
+    /* === 鍵盤操作也要擋住，避免用 Tab/空白鍵選中 === */
+    runners.forEach(r => {
+      r.setAttribute('tabindex', '-1');          // 不能用 Tab 聚焦到這個選項
+      r.setAttribute('aria-disabled', 'true');   // 輔助工具會讀出「已停用」
+      r.addEventListener('keydown', e => e.preventDefault()); // 阻止任何鍵盤操作
+    });
+
+    /* === 偵測滑鼠/手指移動，讓 runaway 的按鈕逃跑 === */
+    // 綁定事件（支援 mouse / touch / pen）
+    box.addEventListener('pointermove', handlePointer, { passive: true });
+    // 如果想在點下去就逃跑，可以開啟下面這行
+    // box.addEventListener('pointerdown', handlePointer, { passive: true });
+
+    // 處理滑鼠或手指移動
+    function handlePointer(e) {
+      const { clientX, clientY } = e; // 目前指標座標
+
+      runners.forEach(input => {
+        const rect = input.getBoundingClientRect(); // 取得這個按鈕的位置與大小
+        const cx = rect.left + rect.width / 2;      // 按鈕中心點 X
+        const cy = rect.top + rect.height / 2;      // 按鈕中心點 Y
+
+        const dx = clientX - cx;  // 指標到按鈕中心的水平距離
+        const dy = clientY - cy;  // 指標到按鈕中心的垂直距離
+        const dist = Math.hypot(dx, dy); // 計算直線距離
+
+        // 如果指標距離小於一定範圍，就要逃跑
+        if (dist < (window.matchMedia('(pointer: coarse)').matches ? 56 : 40)) {
+          // 算出角度（指標在哪個方向靠近）
+          const angle = Math.atan2(dy, dx);
+
+          // 設定逃跑速度（手機比較大，所以跑快一點）
+          const RUNAWAY_SPEED = window.matchMedia('(pointer: coarse)').matches ? 24 : 20;
+
+          // 算出往相反方向移動的量
+          let offsetX = -Math.cos(angle) * RUNAWAY_SPEED;
+          let offsetY = -Math.sin(angle) * RUNAWAY_SPEED;
+
+          // 取得目前的位移（transform: translate）
+          const style = getComputedStyle(input);
+          const matrix = new DOMMatrixReadOnly(style.transform);
+          let currentX = matrix.m41; // 現在的 X 位移
+          let currentY = matrix.m42; // 現在的 Y 位移
+
+          // 計算下一步要移動到哪裡
+          let nextX = currentX + offsetX;
+          let nextY = currentY + offsetY;
+
+          // 邊界檢查（避免跑出去 box 容器）
+          const group = box.getBoundingClientRect();
+          const padding = 8; // 留一點內距
+          if (rect.left + offsetX < group.left + padding) 
+              nextX = currentX + (group.left + padding - rect.left);
+          if (rect.right + offsetX > group.right - padding) 
+              nextX = currentX + (group.right - padding - rect.right);
+          if (rect.top + offsetY < group.top + padding) 
+              nextY = currentY + (group.top + padding - rect.top);
+          if (rect.bottom + offsetY > group.bottom - padding) 
+              nextY = currentY + (group.bottom - padding - rect.bottom);
+
+          // 設定新的位移
+          input.style.transform = `translate(${nextX}px, ${nextY}px)`;
+        }
+      });
+    }
+</script>
+
+
+  
 </head>
 
 <body>
@@ -116,74 +214,7 @@
     </label>
   </div>
 
-  <script>
-    // …前略（你的既有程式）
 
-    const box = document.getElementById('box');
-    const runners = Array.from(document.querySelectorAll('.runaway input[type="radio"]'));
-
-    /* ✅ 新增：阻止 runaway 被點選（滑鼠、觸控皆擋） */
-    const runawayLabels = Array.from(document.querySelectorAll('.runaway'));
-    runawayLabels.forEach(lbl => {
-      lbl.addEventListener('click', e => {        // 點擊文字或整個 label
-        e.preventDefault();
-        e.stopPropagation();
-      });
-      lbl.addEventListener('pointerdown', e => {  // 手指/滑鼠按下就擋
-        e.preventDefault();
-        e.stopPropagation();
-      });
-    });
-
-    /* ✅ 新增：鍵盤也不要選到 runaway（避免用 Tab/Space 切換） */
-    runners.forEach(r => {
-      r.setAttribute('tabindex', '-1');          // 不可用 Tab 聚焦
-      r.setAttribute('aria-disabled', 'true');   // 無障礙提示
-      r.addEventListener('keydown', e => e.preventDefault()); // 保險：擋下鍵盤事件
-    });
-
-    // 使用 Pointer Events：同時支援 mouse / touch / pen
-    box.addEventListener('pointermove', handlePointer, { passive: true });
-    // box.addEventListener('pointerdown', handlePointer, { passive: true });
-
-    function handlePointer(e) {
-      const { clientX, clientY } = e;
-
-      runners.forEach(input => {
-        const rect = input.getBoundingClientRect();
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-
-        const dx = clientX - cx;
-        const dy = clientY - cy;
-        const dist = Math.hypot(dx, dy);
-
-        if (dist < (window.matchMedia('(pointer: coarse)').matches ? 56 : 40)) {
-          const angle = Math.atan2(dy, dx);
-          const RUNAWAY_SPEED = window.matchMedia('(pointer: coarse)').matches ? 24 : 20;
-          let offsetX = -Math.cos(angle) * RUNAWAY_SPEED;
-          let offsetY = -Math.sin(angle) * RUNAWAY_SPEED;
-
-          const style = getComputedStyle(input);
-          const matrix = new DOMMatrixReadOnly(style.transform);
-          let currentX = matrix.m41;
-          let currentY = matrix.m42;
-
-          let nextX = currentX + offsetX;
-          let nextY = currentY + offsetY;
-
-          const group = box.getBoundingClientRect();
-          const padding = 8;
-          if (rect.left + offsetX < group.left + padding) nextX = currentX + (group.left + padding - rect.left);
-          if (rect.right + offsetX > group.right - padding) nextX = currentX + (group.right - padding - rect.right);
-          if (rect.top + offsetY < group.top + padding) nextY = currentY + (group.top + padding - rect.top);
-          if (rect.bottom + offsetY > group.bottom - padding) nextY = currentY + (group.bottom - padding - rect.bottom);
-
-          input.style.transform = `translate(${nextX}px, ${nextY}px)`;
-        }
-      });
-    }
-  </script>
   
 </body>
 
